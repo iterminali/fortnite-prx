@@ -1,0 +1,49 @@
+name: build-prx
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vérifier le fichier source
+        run: |
+          test -f fortnite.c || { echo "fortnite.c absent de la racine du dépôt"; exit 1; }
+          ls -la
+
+      - name: Outils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm meson ninja-build
+
+      - name: SDK PS4
+        run: |
+          git clone --depth 1 https://github.com/ps4-dev/ps4-payload-sdk
+          cd ps4-payload-sdk
+          chmod +x build.sh
+          ./build.sh
+          echo "PS4SDK=$GITHUB_WORKSPACE/ps4-payload-sdk" >> $GITHUB_ENV
+
+      - name: Plugin
+        run: |
+          git clone --depth 1 https://github.com/GoldHEN/GoldHEN_Plugins_SDK
+          cp fortnite.c GoldHEN_Plugins_SDK/
+          cd GoldHEN_Plugins_SDK
+          grep -n "plugin_sources" meson.build
+          sed -i "s/plugin_sources = files(/plugin_sources = files('fortnite.c', /" meson.build
+          grep -n "plugin_sources" meson.build
+          meson setup --cross-file cross/ps4.cross build
+          ninja -C build
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fortnite-prx
+          path: '**/*.prx'
+          if-no-files-found: warn
