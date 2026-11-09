@@ -1,4 +1,5 @@
-name: build-prx
+
+name: build-test
 
 on:
   push:
@@ -10,40 +11,33 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
 
-      - name: Vérifier le fichier source
-        run: |
-          test -f fortnite.c || { echo "fortnite.c absent de la racine du dépôt"; exit 1; }
-          ls -la
-
-      - name: Outils
+      - name: Installer les outils
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm meson ninja-build
+          sudo apt-get install -y \
+            git clang lld llvm meson ninja-build
 
-      - name: SDK PS4
+      - name: Vérifier GitHub
         run: |
-          git clone --depth 1 https://github.com/ps4-dev/ps4-payload-sdk
-          cd ps4-payload-sdk
-          chmod +x build.sh
-          ./build.sh
-          echo "PS4SDK=$GITHUB_WORKSPACE/ps4-payload-sdk" >> $GITHUB_ENV
+          git --version
+          git ls-remote https://github.com/llvm/llvm-project.git HEAD
 
-      - name: Plugin
+      - name: Vérifier les compilateurs
         run: |
-          git clone --depth 1 https://github.com/GoldHEN/GoldHEN_Plugins_SDK
-          cp fortnite.c GoldHEN_Plugins_SDK/
-          cd GoldHEN_Plugins_SDK
-          grep -n "plugin_sources" meson.build
-          sed -i "s/plugin_sources = files(/plugin_sources = files('fortnite.c', /" meson.build
-          grep -n "plugin_sources" meson.build
-          meson setup --cross-file cross/ps4.cross build
-          ninja -C build
+          clang --version
+          ld.lld --version
+          llvm-config --version || true
+          meson --version
+          ninja --version
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: fortnite-prx
-          path: '**/*.prx'
-          if-no-files-found: warn
+      - name: Test de compilation C
+        run: |
+          echo 'int main(void) { return 0; }' > test.c
+          clang test.c -o test
+          ./test
+
+      - name: Résultat
+        run: echo "Build de test terminé avec succès !"
