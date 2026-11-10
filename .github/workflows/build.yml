@@ -40,20 +40,26 @@ jobs:
           echo "Downloading $ASSET_URL"
           curl -L -o openorbis.tar.gz "$ASSET_URL"
 
-          # 2. Extract the tarball directly into the toolchain directory
+          # 2. Extract the tarball (contains a single top-level 'PS4Toolchain' dir)
           mkdir -p openorbis_toolchain
-          tar -xzf openorbis.tar.gz -C openorbis_toolchain --strip-components=1
+          tar -xzf openorbis.tar.gz -C openorbis_toolchain
 
-          # 3. Sanity check: make sure orbis-clang actually exists now
-          if [ ! -f "$GITHUB_WORKSPACE/openorbis_toolchain/bin/linux/orbis-clang" ]; then
-            echo "orbis-clang not found after extraction. Contents of toolchain dir:"
-            find "$GITHUB_WORKSPACE/openorbis_toolchain" -maxdepth 3 | head -50
+          # 3. Point OO_PS4_TOOLCHAIN at the PS4Toolchain directory
+          OO_PS4_TOOLCHAIN="$GITHUB_WORKSPACE/openorbis_toolchain/PS4Toolchain"
+          echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN" >> "$GITHUB_ENV"
+
+          # 4. Add the bin/linux directory to PATH
+          echo "$OO_PS4_TOOLCHAIN/bin/linux" >> "$GITHUB_PATH"
+
+          # 5. Sanity check: make sure orbis-clang exists
+          if [ ! -f "$OO_PS4_TOOLCHAIN/bin/linux/orbis-clang" ]; then
+            echo "orbis-clang not found. Contents of toolchain dir:"
+            find "$OO_PS4_TOOLCHAIN" -maxdepth 3 | head -50
             exit 1
           fi
 
-          # 4. Point the environment to the extracted toolchain
-          echo "OO_PS4_TOOLCHAIN=$GITHUB_WORKSPACE/openorbis_toolchain" >> "$GITHUB_ENV"
-          echo "$GITHUB_WORKSPACE/openorbis_toolchain/bin/linux" >> "$GITHUB_PATH"
+          echo "Toolchain ready at $OO_PS4_TOOLCHAIN"
+          ls "$OO_PS4_TOOLCHAIN/bin/linux" | head -20
 
       - name: Setup GoldHEN SDK
         run: |
@@ -62,6 +68,10 @@ jobs:
 
           cp GoldHEN_Plugins_SDK/lib/libGoldHEN_Hook.a "$OO_PS4_TOOLCHAIN/lib/" 2>/dev/null || true
           cp GoldHEN_Plugins_SDK/include/*.h "$OO_PS4_TOOLCHAIN/include/" 2>/dev/null || true
+
+          echo "GoldHEN SDK files:"
+          ls GoldHEN_Plugins_SDK/lib 2>/dev/null || echo "(no lib dir)"
+          ls GoldHEN_Plugins_SDK/include 2>/dev/null | head -20 || echo "(no include dir)"
 
       - name: Build Fortnite PRX
         run: |
