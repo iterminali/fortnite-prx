@@ -20,7 +20,7 @@ jobs:
           cd ..
 
       - name: Build PRX with OpenOrbis Toolchain
-        uses: OpenOrbis/toolchain-action@main   # ← CAPITAL O's, this was the failure
+        uses: OpenOrbis/toolchain-action@main   # ← capital O's, this is mandatory
         with:
           version: v0.5.2
           command: |
