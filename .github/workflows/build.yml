@@ -1,4 +1,3 @@
-
 name: Build Fortnite PRX
 
 on:
@@ -23,19 +22,27 @@ jobs:
 
       - name: Install and Setup OpenOrbis Toolchain
         run: |
-          wget "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest/download/OpenOrbis-PS4-Toolchain-Linux.zip" -O OpenOrbis-PS4-Toolchain-Linux.zip
+          wget "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/v0.5.4.tar.gz" -O OpenOrbis-PS4-Toolchain.tar.gz
 
-          unzip OpenOrbis-PS4-Toolchain-Linux.zip -d openorbis_toolchain
+          mkdir -p openorbis_toolchain
 
-          export OO_PS4_TOOLCHAIN=$GITHUB_WORKSPACE/openorbis_toolchain
-          echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN" >> $GITHUB_ENV
-          echo "$OO_PS4_TOOLCHAIN/bin/linux" >> $GITHUB_PATH
+          tar -xzf OpenOrbis-PS4-Toolchain.tar.gz -C openorbis_toolchain
 
-          mkdir -p "$OO_PS4_TOOLCHAIN/lib" "$OO_PS4_TOOLCHAIN/include"
+          export OO_PS4_TOOLCHAIN="$GITHUB_WORKSPACE/openorbis_toolchain"
+          echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN" >> "$GITHUB_ENV"
+
+          echo "$OO_PS4_TOOLCHAIN/bin/linux" >> "$GITHUB_PATH"
+
+          mkdir -p "$OO_PS4_TOOLCHAIN/lib"
+          mkdir -p "$OO_PS4_TOOLCHAIN/include"
 
           cp GoldHEN_Plugins_SDK/lib/libGoldHEN_Hook.a "$OO_PS4_TOOLCHAIN/lib/" 2>/dev/null || true
           cp GoldHEN_Plugins_SDK/include/*.h "$OO_PS4_TOOLCHAIN/include/" 2>/dev/null || true
 
+          echo "OpenOrbis Toolchain installed."
+
+      - name: Build Fortnite PRX
+        run: |
           "$OO_PS4_TOOLCHAIN/bin/linux/orbis-clang" \
             -shared \
             -fPIC \
