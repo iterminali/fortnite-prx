@@ -1,43 +1,43 @@
-
-name: build-test
+name: Build Fortnite PRX
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Récupérer le projet
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Installer les outils
+      - name: Get GoldHEN SDK
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git clang lld llvm meson ninja-build
+          git clone https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git
+          cd GoldHEN_Plugins_SDK
+          # We need to compile the hook library so our plugin can link against it
+          make || true # Ignore errors if the SDK build tries to use a local toolchain
+          cd ..
 
-      - name: Vérifier GitHub
-        run: |
-          git --version
-          git ls-remote https://github.com/llvm/llvm-project.git HEAD
-
-      - name: Vérifier les compilateurs
-        run: |
-          clang --version
-          ld.lld --version
-          llvm-config --version || true
-          meson --version
-          ninja --version
-
-      - name: Test de compilation C
-        run: |
-          echo 'int main(void) { return 0; }' > test.c
-          clang test.c -o test
-          ./test
-
-      - name: Résultat
-        run: echo "Build de test terminé avec succès !"
+      - name: Build PRX with OpenOrbis Toolchain
+        uses: OpenOrbis/toolchain-action@main
+        with:
+          version: v0.5.2
+          command: |
+            # Move the compiled SDK library and headers to where the compiler can find them
+            export OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN
+            mkdir -p $OO_PS4_TOOLCHAIN/lib
+            mkdir -p $OO_PS4_TOOLCHAIN/include
+            cp GoldHEN_Plugins_SDK/lib/libGoldHEN_Hook.a $OO_PS4_TOOLCHAIN/lib/ 2>/dev/null || true
+            cp GoldHEN_Plugins_SDK/include/*.h $OO_PS4_TOOLCHAIN/include/ 2>/dev/null || true
+            
+            # Compile the actual plugin using orbis-clang
+            # The source file is fortnite.c and we output fortnite.prx
+            orbis-clang -shared -fPIC -o fortnite.prx fortnite.c -I$OO_PS4_TOOLCHAIN/include -L$OO_PS4_TOOLCHAIN/lib -lGoldHEN_Hook -lkernel -lSceLibKernel
+            
+      - name: Upload PRX Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite-prx
+          path: fortnite.prx
