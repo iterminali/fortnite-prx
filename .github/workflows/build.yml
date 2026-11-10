@@ -21,18 +21,37 @@ jobs:
       - name: Get GoldHEN SDK
         run: |
           git clone --depth=1 https://github.com/GoldHEN/GoldHEN_Plugins_SDK
+
           cd GoldHEN_Plugins_SDK
           make || true
           cd ..
 
-      - name: Download OpenOrbis Toolchain (release zip)
+      - name: Download OpenOrbis Toolchain (latest tarball)
         run: |
-          # Download the latest release zip (check the releases page for the current version)
-          curl -L -o openorbis.zip \
-            https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/OpenOrbis-PS4-Toolchain-0.5.4.zip
+          # 1. Ask GitHub for the latest release asset URL
+          ASSET_URL=$(curl -s https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest \
+            | grep "browser_download_url.*toolchain-llvm.*tar.gz" \
+            | cut -d '"' -f 4)
 
-          unzip -q openorbis.zip -d openorbis_toolchain
+          if [ -z "$ASSET_URL" ]; then
+            echo "Could not find the tarball asset URL"; exit 1
+          fi
 
+          echo "Downloading $ASSET_URL"
+          curl -L -o openorbis.tar.gz "$ASSET_URL"
+
+          # 2. Extract the tarball directly into the toolchain directory
+          mkdir -p openorbis_toolchain
+          tar -xzf openorbis.tar.gz -C openorbis_toolchain --strip-components=1
+
+          # 3. Sanity check: make sure orbis-clang actually exists now
+          if [ ! -f "$GITHUB_WORKSPACE/openorbis_toolchain/bin/linux/orbis-clang" ]; then
+            echo "orbis-clang not found after extraction. Contents of toolchain dir:"
+            find "$GITHUB_WORKSPACE/openorbis_toolchain" -maxdepth 3 | head -50
+            exit 1
+          fi
+
+          # 4. Point the environment to the extracted toolchain
           echo "OO_PS4_TOOLCHAIN=$GITHUB_WORKSPACE/openorbis_toolchain" >> "$GITHUB_ENV"
           echo "$GITHUB_WORKSPACE/openorbis_toolchain/bin/linux" >> "$GITHUB_PATH"
 
