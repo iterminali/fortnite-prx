@@ -1,45 +1,51 @@
+
 name: Build Fortnite PRX
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Get GoldHEN SDK
         run: |
-          git clone "https://github.com"
+          git clone --depth=1 https://github.com/GoldHEN/GoldHEN_Plugins_SDK
           cd GoldHEN_Plugins_SDK
           make || true
           cd ..
 
       - name: Install and Setup OpenOrbis Toolchain
         run: |
-          # Download the official Linux release of the toolchain on a single line
-          wget "https://github.com"
+          wget "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest/download/OpenOrbis-PS4-Toolchain-Linux.zip" -O OpenOrbis-PS4-Toolchain-Linux.zip
+
           unzip OpenOrbis-PS4-Toolchain-Linux.zip -d openorbis_toolchain
-          
-          # Dynamically expose the base path to the runner environment
+
           export OO_PS4_TOOLCHAIN=$GITHUB_WORKSPACE/openorbis_toolchain
           echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN" >> $GITHUB_ENV
           echo "$OO_PS4_TOOLCHAIN/bin/linux" >> $GITHUB_PATH
 
-          # Build/prepare SDK structure
-          mkdir -p $OO_PS4_TOOLCHAIN/lib $OO_PS4_TOOLCHAIN/include
-          cp GoldHEN_Plugins_SDK/lib/libGoldHEN_Hook.a $OO_PS4_TOOLCHAIN/lib/ 2>/dev/null || true
-          cp GoldHEN_Plugins_SDK/include/*.h $OO_PS4_TOOLCHAIN/include/ 2>/dev/null || true
-          
-          # Compile the PRX utilizing your configured paths
-          $OO_PS4_TOOLCHAIN/bin/linux/orbis-clang -shared -fPIC -o fortnite.prx fortnite.c \
-            -I$OO_PS4_TOOLCHAIN/include \
-            -L$OO_PS4_TOOLCHAIN/lib \
-            -lGoldHEN_Hook -lkernel -lSceLibKernel
+          mkdir -p "$OO_PS4_TOOLCHAIN/lib" "$OO_PS4_TOOLCHAIN/include"
+
+          cp GoldHEN_Plugins_SDK/lib/libGoldHEN_Hook.a "$OO_PS4_TOOLCHAIN/lib/" 2>/dev/null || true
+          cp GoldHEN_Plugins_SDK/include/*.h "$OO_PS4_TOOLCHAIN/include/" 2>/dev/null || true
+
+          "$OO_PS4_TOOLCHAIN/bin/linux/orbis-clang" \
+            -shared \
+            -fPIC \
+            -o fortnite.prx \
+            fortnite.c \
+            -I"$OO_PS4_TOOLCHAIN/include" \
+            -L"$OO_PS4_TOOLCHAIN/lib" \
+            -lGoldHEN_Hook \
+            -lkernel \
+            -lSceLibKernel
 
       - name: Upload PRX Artifact
         uses: actions/upload-artifact@v4
