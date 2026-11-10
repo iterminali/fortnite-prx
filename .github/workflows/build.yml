@@ -7,25 +7,25 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Get GoldHEN SDK
         run: |
-          git clone https://github.com/GoldHEN/GoldHEN_Plugins_SDK.git
+          git clone https://github.com
           cd GoldHEN_Plugins_SDK
           make || true
           cd ..
 
       - name: Install and Setup OpenOrbis Toolchain
         run: |
-          # Download and extract the official Linux release of the toolchain
-          wget https://github.com
+          # Download the official Linux release of the toolchain on a single line
+          wget "https://github.com"
           unzip OpenOrbis-PS4-Toolchain-Linux.zip -d openorbis_toolchain
           
-          # Dynamically expose the base path to the remainder of this step
+          # Dynamically expose the base path to the runner environment
           export OO_PS4_TOOLCHAIN=$GITHUB_WORKSPACE/openorbis_toolchain
           echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN" >> $GITHUB_ENV
           echo "$OO_PS4_TOOLCHAIN/bin/linux" >> $GITHUB_PATH
