@@ -1,93 +1,66 @@
-name: Build Fortnite PRX
+name: build-prx
 
 on:
   push:
-    branches: ["main", "master"]
+    paths-ignore: ['**/*.md', '**/*.txt']
+  pull_request:
+    paths-ignore: ['**/*.md', '**/*.txt']
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  prx:
+    runs-on: ubuntu-22.04
+
+    env:
+      OO_PS4_TOOLCHAIN: ${{ github.workspace }}/OpenOrbis/PS4Toolchain
+      GOLDHEN_SDK:      ${{ github.workspace }}/GoldHEN_Plugins_SDK
+      OO_SDK_URL: https://github.com/illusion0001/OpenOrbis-PS4-Toolchain/releases/latest/download/toolchain.tar.gz
 
     steps:
-      - name: Checkout repository
+      - name: Checkout plugin
         uses: actions/checkout@v4
 
-      - name: Install clang & lld
+      - name: Install clang / lld / llvm-ar
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld
+          sudo apt-get install -y clang lld llvm
 
-      - name: Get GoldHEN SDK
+      - name: Cache OpenOrbis toolchain
+        id: cache-oo
+        uses: actions/cache@v4
+        with:
+          path: OpenOrbis
+          key: oo-${{ env.OO_SDK_URL }}
+
+      - name: Download OpenOrbis toolchain
+        if: steps.cache-oo.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 https://github.com/GoldHEN/GoldHEN_Plugins_SDK
+          curl -sL "$OO_SDK_URL" | tar xz -C ./
+          test -x "$OO_PS4_TOOLCHAIN/bin/linux/create-fself"
 
-          cd GoldHEN_Plugins_SDK
-          make || true
-          cd ..
+      - name: Checkout GoldHEN Plugin SDK
+        uses: actions/checkout@v4
+        with:
+          repository: GoldHEN/GoldHEN_Plugins_SDK
+          path: GoldHEN_Plugins_SDK
 
-      - name: Download OpenOrbis Toolchain (latest tarball)
+      - name: Build GoldHEN Hook library
         run: |
-          # 1. Ask GitHub for the latest release asset URL
-          ASSET_URL=$(curl -s https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest \
-            | grep "browser_download_url.*toolchain-llvm.*tar.gz" \
-            | cut -d '"' -f 4)
+          make -C GoldHEN_Plugins_SDK -j"$(nproc)"
+          make -C GoldHEN_Plugins_SDK install
+          test -f "$GOLDHEN_SDK/build/crtprx.o"
 
-          if [ -z "$ASSET_URL" ]; then
-            echo "Could not find the tarball asset URL"; exit 1
-          fi
+      - name: Build plugin
+        run: make -j"$(nproc)" VERBOSE=1
 
-          echo "Downloading $ASSET_URL"
-          curl -L -o openorbis.tar.gz "$ASSET_URL"
+      - name: List output
+        run: ls -l bin/
 
-          # 2. Extract the tarball (contains a single top-level 'PS4Toolchain' dir)
-          mkdir -p openorbis_toolchain
-          tar -xzf openorbis.tar.gz -C openorbis_toolchain
-
-          # 3. Point OO_PS4_TOOLCHAIN at the PS4Toolchain directory
-          OO_PS4_TOOLCHAIN="$GITHUB_WORKSPACE/openorbis_toolchain/PS4Toolchain"
-          echo "OO_PS4_TOOLCHAIN=$OO_PS4_TOOLCHAIN" >> "$GITHUB_ENV"
-
-          # 4. Add the bin/linux directory to PATH
-          echo "$OO_PS4_TOOLCHAIN/bin/linux" >> "$GITHUB_PATH"
-
-          # 5. Sanity check: make sure orbis-clang exists
-          if [ ! -f "$OO_PS4_TOOLCHAIN/bin/linux/orbis-clang" ]; then
-            echo "orbis-clang not found. Contents of toolchain dir:"
-            find "$OO_PS4_TOOLCHAIN" -maxdepth 3 | head -50
-            exit 1
-          fi
-
-          echo "Toolchain ready at $OO_PS4_TOOLCHAIN"
-          ls "$OO_PS4_TOOLCHAIN/bin/linux" | head -20
-
-      - name: Setup GoldHEN SDK
-        run: |
-          mkdir -p "$OO_PS4_TOOLCHAIN/lib"
-          mkdir -p "$OO_PS4_TOOLCHAIN/include"
-
-          cp GoldHEN_Plugins_SDK/lib/libGoldHEN_Hook.a "$OO_PS4_TOOLCHAIN/lib/" 2>/dev/null || true
-          cp GoldHEN_Plugins_SDK/include/*.h "$OO_PS4_TOOLCHAIN/include/" 2>/dev/null || true
-
-          echo "GoldHEN SDK files:"
-          ls GoldHEN_Plugins_SDK/lib 2>/dev/null || echo "(no lib dir)"
-          ls GoldHEN_Plugins_SDK/include 2>/dev/null | head -20 || echo "(no include dir)"
-
-      - name: Build Fortnite PRX
-        run: |
-          "$OO_PS4_TOOLCHAIN/bin/linux/orbis-clang" \
-            -shared \
-            -fPIC \
-            -o fortnite.prx \
-            fortnite.c \
-            -I"$OO_PS4_TOOLCHAIN/include" \
-            -L"$OO_PS4_TOOLCHAIN/lib" \
-            -lGoldHEN_Hook \
-            -lkernel \
-            -lSceLibKernel
-
-      - name: Upload PRX Artifact
+      - name: Upload PRX
         uses: actions/upload-artifact@v4
         with:
-          name: fortnite-prx
-          path: fortnite.prx
+          name: fortnite-prx-${{ github.sha }}
+          path: |
+            bin/*.prx
+            bin/*_stub.so
+          if-no-files-found: error
