@@ -14,44 +14,112 @@ jobs:
     env:
       OO_PS4_TOOLCHAIN: ${{ github.workspace }}/OpenOrbis/PS4Toolchain
       GOLDHEN_SDK:      ${{ github.workspace }}/GoldHEN_Plugins_SDK
-      OO_SDK_URL: https://github.com/illusion0001/OpenOrbis-PS4-Toolchain/releases/latest/download/toolchain.tar.gz
 
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v4
 
-      - name: Install clang / lld / llvm-ar
+      # ------------------------------------------------------------------
+      # APT MIRROR FIX: Azure mirror on GitHub runners intermittently
+      # fails to resolve, causing exit code 100. Replace it with the
+      # canonical archive and add retries.
+      # ------------------------------------------------------------------
+      - name: Fix APT mirror and install dependencies
         run: |
+          if sudo test -f /etc/apt/apt-mirrors.txt && \
+             sudo grep -q "azure.archive.ubuntu.com" /etc/apt/apt-mirrors.txt; then
+            echo "Replacing Azure Ubuntu mirror with archive.ubuntu.com"
+            sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' /etc/apt/apt-mirrors.txt
+          fi
+
+          echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80-retries
+
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm
+          sudo apt-get install -y clang lld llvm curl
 
-      - name: Cache OpenOrbis toolchain
-        id: cache-oo
-        uses: actions/cache@v4
-        with:
-          path: OpenOrbis
-          key: oo-${{ env.OO_SDK_URL }}
-
+      # ------------------------------------------------------------------
+      # OpenOrbis toolchain
+      # ------------------------------------------------------------------
       - name: Download OpenOrbis toolchain
-        if: steps.cache-oo.outputs.cache-hit != 'true'
         run: |
-          curl -sL "$OO_SDK_URL" | tar xz -C ./
-          test -x "$OO_PS4_TOOLCHAIN/bin/linux/create-fself"
+          mkdir -p OpenOrbis
+          cd OpenOrbis
 
+          # Try the canonical release asset names. If the first 404s,
+          # fall back to the next. The release page does not expose a
+          # stable single asset name across versions, so we probe.
+          URL=""
+          for name in \
+            "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest/download/toolchain.tar.gz" \
+            "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest/download/OpenOrbis-PS4-Toolchain.tar.gz" \
+            "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest/download/OpenOrbis-PS4-Toolchain.zip"
+          do
+            if curl -fsSL -o /dev/null --head "$name"; then
+              URL="$name"
+              break
+            fi
+          done
+
+          if [ -z "$URL" ]; then
+            echo "No known release asset found. Falling back to git clone."
+            git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git PS4Toolchain
+          else
+            echo "Downloading: $URL"
+            curl -fL "$URL" -o toolchain.pkg
+            if echo "$URL" | grep -q '\.zip$'; then
+              unzip -q toolchain.pkg -d PS4Toolchain
+            else
+              mkdir -p PS4Toolchain
+              tar xzf toolchain.pkg -C PS4Toolchain
+            fi
+          fi
+
+          # Normalize layout: the toolchain expects OO_PS4_TOOLCHAIN to point
+          # at the directory containing bin/, include/, lib/, link.x.
+          if [ -d PS4Toolchain/PS4Toolchain ]; then
+            mv PS4Toolchain/PS4Toolchain/* PS4Toolchain/ 2>/dev/null || true
+            rmdir PS4Toolchain/PS4Toolchain 2>/dev/null || true
+          fi
+
+          test -x "$OO_PS4_TOOLCHAIN/bin/linux/create-fself" || {
+            echo "ERROR: create-fself not found at expected path."
+            find PS4Toolchain -name create-fself
+            exit 1
+          }
+
+      # ------------------------------------------------------------------
+      # GoldHEN Plugin SDK
+      # ------------------------------------------------------------------
       - name: Checkout GoldHEN Plugin SDK
         uses: actions/checkout@v4
         with:
           repository: GoldHEN/GoldHEN_Plugins_SDK
           path: GoldHEN_Plugins_SDK
 
-      - name: Build GoldHEN Hook library
+      - name: Build GoldHEN Hook static library and CRT object
         run: |
-          make -C GoldHEN_Plugins_SDK -j"$(nproc)"
-          make -C GoldHEN_Plugins_SDK install
-          test -f "$GOLDHEN_SDK/build/crtprx.o"
+          make -C "$GOLDHEN_SDK" -j"$(nproc)"
 
+          # The SDK Makefile produces:
+          #   libGoldHEN_Hook.a      (root of SDK)
+          #   build/crtprx.o         (intermediate directory)
+          test -f "$GOLDHEN_SDK/libGoldHEN_Hook.a" || {
+            echo "ERROR: libGoldHEN_Hook.a not produced."
+            ls -R "$GOLDHEN_SDK"
+            exit 1
+          }
+          test -f "$GOLDHEN_SDK/build/crtprx.o" || {
+            echo "ERROR: crtprx.o not produced."
+            ls -R "$GOLDHEN_SDK/build"
+            exit 1
+          }
+
+      # ------------------------------------------------------------------
+      # Plugin build
+      # ------------------------------------------------------------------
       - name: Build plugin
-        run: make -j"$(nproc)" VERBOSE=1
+        run: |
+          make -j"$(nproc)" VERBOSE=1
 
       - name: List output
         run: ls -l bin/
